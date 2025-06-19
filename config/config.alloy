@@ -1,0 +1,63 @@
+otelcol.receiver.otlp "ingest" {
+  grpc {endpoint = "0.0.0.0:4317"}
+  http {endpoint = "0.0.0.0:4318"}
+  
+  output {
+    metrics = [otelcol.processor.batch.metrics.input]
+    traces  = [otelcol.processor.batch.traces.input]
+  }
+}
+
+// Batch processing for metrics
+otelcol.processor.batch "metrics" {
+  timeout = "5s"
+  
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+  }
+}
+
+// Batch processing for metrics
+otelcol.processor.batch "traces" {
+  timeout = "5s"
+  
+  output {
+    traces  = [ 
+      otelcol.connector.spanmetrics.histogram_pipeline.input,
+      otelcol.processor.probabilistic_sampler.trace_sampling.input,
+    ]
+  }
+}
+
+// Pipeline 1: Probabilistic trace sampling (10% sampling rate)
+otelcol.processor.probabilistic_sampler "trace_sampling" {
+  sampling_percentage = 10
+  output {traces = [otelcol.exporter.otlp.traces.input]}
+}
+
+// Pipeline 2: Histogram generation from all traces
+otelcol.connector.spanmetrics "histogram_pipeline" { 
+  histogram {explicit {buckets = ["250ms", "500ms", "750ms", "1s", "3s"]}}
+  metrics_flush_interval = "15s"
+  output {metrics = [otelcol.exporter.prometheus.default.input]}
+}
+
+// Convert OTLP metrics to Prometheus format
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.remote_write.metrics_backend.receiver]
+}
+
+// Remote write to Prometheus endpoint
+prometheus.remote_write "metrics_backend" {
+  endpoint {
+    url = "http://localhost:9090/api/v1/write"
+    queue_config {max_shards = 50}
+  }
+}
+
+// Export traces to backend
+otelcol.exporter.otlp "traces" {
+  client {
+    endpoint = "http://traces-backend:4317"
+  }
+}

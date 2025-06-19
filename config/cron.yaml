@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: batch-otel-job
+spec:
+  schedule: "*/5 * * * *"  # Runs every 5 minutes
+  jobTemplate:
+    spec:
+      parallelism: 3
+      completions: 3
+      template:
+        spec:
+          containers:
+          - name: batch-otel
+            image: your-docker-image:latest
+            command: ["python", "your_script.py"]
+          restartPolicy: Never
